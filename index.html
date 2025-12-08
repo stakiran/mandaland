@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mandaland</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      font-family: sans-serif;
+    }
+    header {
+      background: #f0f0f0;
+      padding: 8px 16px;
+      font-size: 1.2em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ccc;
+    }
+    #layer2 {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 2px;
+    }
+    .cell {
+      border: 1px solid #888;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      text-align: center;
+      overflow-wrap: break-word;
+      white-space: pre-wrap;
+      font-size: 1.1em;
+      position: relative;
+    }
+    .cell.selected {
+      border: 3px solid #007bff;
+    }
+    .cell.core {
+      background: #e8f4ff;
+    }
+    #layer3 {
+      border-top: 1px solid #ccc;
+      padding: 8px;
+    }
+    #editor {
+      width: 100%;
+      height: 120px;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 1em;
+      resize: none;
+    }
+  </style>
+</head>
+<body>
+  <header id="layer1">
+    <div id="mandal-name">Mandaland</div>
+    <div id="tier-indicator">Hop: 0</div>
+  </header>
+  <div id="layer2" tabindex="0"></div>
+  <div id="layer3">
+    <textarea id="editor" placeholder="ここにマスの内容を編集…"></textarea>
+  </div>
+  <script>
+    const DB_NAME = 'mandalandDB';
+    const DB_VERSION = 1;
+    let db;
+    async function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+          const d = e.target.result;
+          if (!d.objectStoreNames.contains('mandalas')) {
+            d.createObjectStore('mandalas', { keyPath: 'id', autoIncrement: true });
+          }
+          if (!d.objectStoreNames.contains('pointers')) {
+            d.createObjectStore('pointers', { keyPath: 'key' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    async function getStore(storeName, mode = 'readonly') {
+      const tx = db.transaction(storeName, mode);
+      return tx.objectStore(storeName);
+    }
+    async function getPointer() {
+      const store = await getStore('pointers');
+      return new Promise(res => {
+        const req = store.get('current');
+        req.onsuccess = () => res(req.result);
+      });
+    }
+    async function setPointer(data) {
+      const store = await getStore('pointers', 'readwrite');
+      return new Promise(res => {
+        const req = store.put({ key: 'current', ...data });
+        req.onsuccess = () => res();
+      });
+    }
+    async function getMandal(id) {
+      const store = await getStore('mandalas');
+      return new Promise(res => {
+        const req = store.get(id);
+        req.onsuccess = () => res(req.result);
+      });
+    }
+    async function addMandal(mandal) {
+      const store = await getStore('mandalas', 'readwrite');
+      return new Promise(res => {
+        const req = store.add(mandal);
+        req.onsuccess = () => res(req.result);
+      });
+    }
+    async function updateMandal(mandal) {
+      const store = await getStore('mandalas', 'readwrite');
+      return new Promise(res => {
+        const req = store.put(mandal);
+        req.onsuccess = () => res();
+      });
+    }
+    let autosaveTimer;
+    async function init() {
+      db = await openDB();
+      let ptr = await getPointer();
+      if (!ptr) {
+        // 初期マンダラ作成
+        const id = await addMandal({ coreContent: 'Mandaland', masses: Array(9).fill('') });
+        ptr = { currentMandalId: id, currentIndex: 4, tier: 0 };
+        await setPointer(ptr);
+      }
+      render();
+      setupEvents();
+      startAutoSave();
+    }
+    async function render() {
+      const ptr = await getPointer();
+      const mandal = await getMandal(ptr.currentMandalId);
+      document.getElementById('mandal-name').textContent = mandal.coreContent;
+      document.getElementById('tier-indicator').textContent = 'Hop: ' + ptr.tier;
+      const container = document.getElementById('layer2');
+      container.innerHTML = '';
+      mandal.masses.forEach((text, idx) => {
+        const div = document.createElement('div');
+        div.classList.add('cell');
+        if (idx === ptr.currentIndex) div.classList.add('selected');
+        if (idx === 4) div.classList.add('core');
+        div.textContent = text;
+        container.appendChild(div);
+      });
+      document.getElementById('editor').value = mandal.masses[ptr.currentIndex];
+    }
+    function startAutoSave() {
+      autosaveTimer = setInterval(() => saveEditor(), 10000);
+    }
+    async function saveEditor() {
+      const ptr = await getPointer();
+      const mandal = await getMandal(ptr.currentMandalId);
+      const textarea = document.getElementById('editor');
+      if (mandal.masses[ptr.currentIndex] !== textarea.value) {
+        mandal.masses[ptr.currentIndex] = textarea.value;
+        await updateMandal(mandal);
+        render();
+      }
+    }
+    function setupEvents() {
+      document.addEventListener('keydown', async e => {
+        const ptr = await getPointer();
+        const mandal = await getMandal(ptr.currentMandalId);
+        let moved = false;
+        if (document.activeElement === document.getElementById('editor')) {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            saveEditor();
+            render();
+            document.getElementById('layer2').focus();
+          }
+          return;
+        }
+        switch (e.key) {
+          case 'ArrowLeft':
+          case 'ArrowUp':
+          case 'ArrowRight':
+          case 'ArrowDown':
+            e.preventDefault();
+            const dir = { ArrowLeft: -1, ArrowUp: -3, ArrowRight: 1, ArrowDown: 3 }[e.key];
+            let ni = (ptr.currentIndex + dir + 9) % 9;
+            ptr.currentIndex = ni;
+            await setPointer(ptr);
+            render();
+            break;
+          case 'e':
+            e.preventDefault();
+            document.getElementById('editor').focus();
+            break;
+          case ' ':
+            e.preventDefault();
+            // エンター処理
+            await saveEditor();
+            const content = mandal.masses[ptr.currentIndex];
+            if (ptr.currentIndex === 4) return;
+            if (mandal.links && mandal.links[ptr.currentIndex]) {
+              // 既存リンク先へ移動
+              const linkId = mandal.links[ptr.currentIndex];
+              ptr.currentMandalId = linkId;
+              ptr.currentIndex = 4;
+              ptr.tier++;
+              await setPointer(ptr);
+            } else {
+              // 新規マンダラ作成
+              const newId = await addMandal({ coreContent: content, masses: Array(9).fill(''), links: {} });
+              mandal.links = mandal.links || {};
+              mandal.links[ptr.currentIndex] = newId;
+              await updateMandal(mandal);
+              ptr.currentMandalId = newId;
+              ptr.currentIndex = 4;
+              ptr.tier++;
+              await setPointer(ptr);
+            }
+            render();
+            break;
+          case 'o':
+            e.preventDefault();
+            const maybeUrl = mandal.masses[ptr.currentIndex].match(/https?:\/\/\S+/);
+            if (maybeUrl) window.open(maybeUrl[0], '_blank');
+            break;
+        }
+      });
+      document.getElementById('editor').addEventListener('blur', () => {
+        saveEditor();
+        render();
+      });
+    }
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
