@@ -119,10 +119,11 @@
         req.onsuccess = () => res(req.result);
       });
     }
-    async function updateMandal(mandal) {
+
+    async function deleteMandal(id) {
       const store = await getStore('mandalas', 'readwrite');
       return new Promise(res => {
-        const req = store.put(mandal);
+        const req = store.delete(id);
         req.onsuccess = () => res();
       });
     }
@@ -204,8 +205,9 @@
             e.preventDefault();
             // エンター処理
             await saveEditor();
-            const content = mandal.masses[ptr.currentIndex];
-            if (ptr.currentIndex === 4) return;
+              const content = mandal.masses[ptr.currentIndex];
+              if (!content) return;
+              if (ptr.currentIndex === 4) return;
             if (mandal.links && mandal.links[ptr.currentIndex]) {
               // 既存リンク先へ移動
               const linkId = mandal.links[ptr.currentIndex];
@@ -215,7 +217,13 @@
               await setPointer(ptr);
             } else {
               // 新規マンダラ作成
-              const newId = await addMandal({ coreContent: content, masses: Array(9).fill(''), links: {} });
+              const newId = await addMandal({
+                coreContent: content,
+                masses: Array(9).fill(''),
+                links: {},
+                parentId: ptr.currentMandalId,
+                parentIndex: ptr.currentIndex
+              });
               mandal.links = mandal.links || {};
               mandal.links[ptr.currentIndex] = newId;
               await updateMandal(mandal);
@@ -224,9 +232,37 @@
               ptr.tier++;
               await setPointer(ptr);
             }
-            render();
-            break;
-          case 'o':
+              render();
+              break;
+            case 'Backspace':
+              e.preventDefault();
+              if (mandal.parentId !== undefined) {
+                ptr.currentMandalId = mandal.parentId;
+                ptr.currentIndex = mandal.parentIndex;
+                ptr.tier--;
+                await setPointer(ptr);
+                render();
+              }
+              break;
+            case 'Delete':
+              e.preventDefault();
+              if (mandal.parentId !== undefined && confirm('現在のマンダラを削除します。よろしいですか？')) {
+                const parentId = mandal.parentId;
+                const parentIndex = mandal.parentIndex;
+                await deleteMandal(ptr.currentMandalId);
+                const parent = await getMandal(parentId);
+                if (parent.links) {
+                  delete parent.links[parentIndex];
+                  await updateMandal(parent);
+                }
+                ptr.currentMandalId = parentId;
+                ptr.currentIndex = parentIndex;
+                ptr.tier--;
+                await setPointer(ptr);
+                render();
+              }
+              break;
+            case 'o':
             e.preventDefault();
             const maybeUrl = mandal.masses[ptr.currentIndex].match(/https?:\/\/\S+/);
             if (maybeUrl) window.open(maybeUrl[0], '_blank');
