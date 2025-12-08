@@ -194,6 +194,17 @@
         render();
       });
 
+      document.getElementById('editor').addEventListener('keydown', async e => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          document.getElementById('editor').blur();
+          await saveEditor();
+          render();
+          document.getElementById('layer2').focus();
+        }
+      });
+
       document.getElementById('layer2').addEventListener('keydown', async e => {
         const ptr = await getPointer();
         const mandal = await getMandal(ptr.currentMandalId);
