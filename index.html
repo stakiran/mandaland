@@ -26,6 +26,7 @@
       grid-template-columns: repeat(3, 1fr);
       grid-template-rows: repeat(3, 1fr);
       gap: 2px;
+      outline: none;
     }
     .cell {
       border: 1px solid #888;
@@ -37,7 +38,6 @@
       overflow-wrap: break-word;
       white-space: pre-wrap;
       font-size: 1.1em;
-      position: relative;
     }
     .cell.selected {
       border: 3px solid #007bff;
@@ -71,6 +71,7 @@
     const DB_NAME = 'mandalandDB';
     const DB_VERSION = 1;
     let db;
+
     async function openDB() {
       return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -87,10 +88,20 @@
         req.onerror = () => reject(req.error);
       });
     }
+
     async function getStore(storeName, mode = 'readonly') {
       const tx = db.transaction(storeName, mode);
       return tx.objectStore(storeName);
     }
+
+    async function updateMandal(mandal) {
+      const store = await getStore('mandalas', 'readwrite');
+      return new Promise(res => {
+        const req = store.put(mandal);
+        req.onsuccess = () => res();
+      });
+    }
+
     async function getPointer() {
       const store = await getStore('pointers');
       return new Promise(res => {
@@ -98,6 +109,7 @@
         req.onsuccess = () => res(req.result);
       });
     }
+
     async function setPointer(data) {
       const store = await getStore('pointers', 'readwrite');
       return new Promise(res => {
@@ -105,6 +117,7 @@
         req.onsuccess = () => res();
       });
     }
+
     async function getMandal(id) {
       const store = await getStore('mandalas');
       return new Promise(res => {
@@ -112,6 +125,7 @@
         req.onsuccess = () => res(req.result);
       });
     }
+
     async function addMandal(mandal) {
       const store = await getStore('mandalas', 'readwrite');
       return new Promise(res => {
@@ -127,13 +141,12 @@
         req.onsuccess = () => res();
       });
     }
-    let autosaveTimer;
+
     async function init() {
       db = await openDB();
       let ptr = await getPointer();
       if (!ptr) {
-        // 初期マンダラ作成
-        const id = await addMandal({ coreContent: 'Mandaland', masses: Array(9).fill('') });
+        const id = await addMandal({ coreContent: 'Mandaland', masses: Array(9).fill(''), links: {} });
         ptr = { currentMandalId: id, currentIndex: 4, tier: 0 };
         await setPointer(ptr);
       }
@@ -141,6 +154,7 @@
       setupEvents();
       startAutoSave();
     }
+
     async function render() {
       const ptr = await getPointer();
       const mandal = await getMandal(ptr.currentMandalId);
@@ -158,9 +172,11 @@
       });
       document.getElementById('editor').value = mandal.masses[ptr.currentIndex];
     }
+
     function startAutoSave() {
-      autosaveTimer = setInterval(() => saveEditor(), 10000);
+      setInterval(saveEditor, 10000);
     }
+
     async function saveEditor() {
       const ptr = await getPointer();
       const mandal = await getMandal(ptr.currentMandalId);
@@ -171,52 +187,51 @@
         render();
       }
     }
+
     function setupEvents() {
-      document.addEventListener('keydown', async e => {
+      document.getElementById('editor').addEventListener('blur', async () => {
+        await saveEditor();
+        render();
+      });
+
+      document.getElementById('layer2').addEventListener('keydown', async e => {
         const ptr = await getPointer();
         const mandal = await getMandal(ptr.currentMandalId);
-        let moved = false;
+
+        if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'e', ' ', 'Backspace', 'Delete', 'o'].includes(e.key)) {
+          e.preventDefault();
+        }
+
         if (document.activeElement === document.getElementById('editor')) {
           if (e.key === 'Escape') {
-            e.preventDefault();
-            saveEditor();
+            await saveEditor();
             render();
             document.getElementById('layer2').focus();
           }
           return;
         }
+
         switch (e.key) {
           case 'ArrowLeft':
           case 'ArrowUp':
           case 'ArrowRight':
-          case 'ArrowDown':
-            e.preventDefault();
-            const dir = { ArrowLeft: -1, ArrowUp: -3, ArrowRight: 1, ArrowDown: 3 }[e.key];
-            let ni = (ptr.currentIndex + dir + 9) % 9;
-            ptr.currentIndex = ni;
+          case 'ArrowDown': {
+            const dirMap = { ArrowLeft: -1, ArrowUp: -3, ArrowRight: 1, ArrowDown: 3 };
+            ptr.currentIndex = (ptr.currentIndex + dirMap[e.key] + 9) % 9;
             await setPointer(ptr);
             render();
             break;
+          }
           case 'e':
-            e.preventDefault();
             document.getElementById('editor').focus();
             break;
           case ' ':
-            e.preventDefault();
-            // エンター処理
             await saveEditor();
-              const content = mandal.masses[ptr.currentIndex];
-              if (!content) return;
-              if (ptr.currentIndex === 4) return;
+            const content = mandal.masses[ptr.currentIndex];
+            if (!content || ptr.currentIndex === 4) return;
             if (mandal.links && mandal.links[ptr.currentIndex]) {
-              // 既存リンク先へ移動
-              const linkId = mandal.links[ptr.currentIndex];
-              ptr.currentMandalId = linkId;
-              ptr.currentIndex = 4;
-              ptr.tier++;
-              await setPointer(ptr);
+              ptr.currentMandalId = mandal.links[ptr.currentIndex];
             } else {
-              // 新規マンダラ作成
               const newId = await addMandal({
                 coreContent: content,
                 masses: Array(9).fill(''),
@@ -228,52 +243,49 @@
               mandal.links[ptr.currentIndex] = newId;
               await updateMandal(mandal);
               ptr.currentMandalId = newId;
-              ptr.currentIndex = 4;
-              ptr.tier++;
-              await setPointer(ptr);
             }
-              render();
-              break;
-            case 'Backspace':
-              e.preventDefault();
-              if (mandal.parentId !== undefined) {
-                ptr.currentMandalId = mandal.parentId;
-                ptr.currentIndex = mandal.parentIndex;
-                ptr.tier--;
-                await setPointer(ptr);
-                render();
-              }
-              break;
-            case 'Delete':
-              e.preventDefault();
-              if (mandal.parentId !== undefined && confirm('現在のマンダラを削除します。よろしいですか？')) {
-                const parentId = mandal.parentId;
-                const parentIndex = mandal.parentIndex;
-                await deleteMandal(ptr.currentMandalId);
-                const parent = await getMandal(parentId);
-                if (parent.links) {
-                  delete parent.links[parentIndex];
-                  await updateMandal(parent);
-                }
-                ptr.currentMandalId = parentId;
-                ptr.currentIndex = parentIndex;
-                ptr.tier--;
-                await setPointer(ptr);
-                render();
-              }
-              break;
-            case 'o':
-            e.preventDefault();
-            const maybeUrl = mandal.masses[ptr.currentIndex].match(/https?:\/\/\S+/);
-            if (maybeUrl) window.open(maybeUrl[0], '_blank');
+            ptr.currentIndex = 4;
+            ptr.tier++;
+            await setPointer(ptr);
+            render();
             break;
+          case 'Backspace':
+            if (mandal.parentId !== undefined) {
+              ptr.currentMandalId = mandal.parentId;
+              ptr.currentIndex = mandal.parentIndex;
+              ptr.tier--;
+              await setPointer(ptr);
+              render();
+            }
+            break;
+          case 'Delete':
+            if (mandal.parentId !== undefined && confirm('現在のマンダラを削除します。よろしいですか？')) {
+              const parentId = mandal.parentId;
+              const parentIndex = mandal.parentIndex;
+              await deleteMandal(ptr.currentMandalId);
+              const parent = await getMandal(parentId);
+              if (parent.links) {
+                delete parent.links[parentIndex];
+                await updateMandal(parent);
+              }
+              ptr.currentMandalId = parentId;
+              ptr.currentIndex = parentIndex;
+              ptr.tier--;
+              await setPointer(ptr);
+              render();
+            }
+            break;
+          case 'o': {
+            const url = mandal.masses[ptr.currentIndex].match(/https?:\/\/\S+/);
+            if (url) window.open(url[0], '_blank');
+            break;
+          }
         }
       });
-      document.getElementById('editor').addEventListener('blur', () => {
-        saveEditor();
-        render();
-      });
+
+      document.getElementById('layer2').focus();
     }
+
     window.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
