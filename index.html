@@ -65,7 +65,7 @@
   </header>
   <div id="layer2" tabindex="0"></div>
   <div id="layer3">
-    <textarea id="editor" placeholder="ここにマスの内容を編集…"></textarea>
+    <input type="text" id="editor" placeholder="ここにマスの内容を編集…" />
   </div>
   <script>
     const DB_NAME = 'mandalandDB';
@@ -197,7 +197,7 @@
       });
 
       document.getElementById('editor').addEventListener('keydown', async e => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' || e.key === 'Enter') {
           e.preventDefault();
           e.stopPropagation();
           document.getElementById('editor').blur();
@@ -211,7 +211,7 @@
         const ptr = await getPointer();
         const mandal = await getMandal(ptr.currentMandalId);
 
-        if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'e', ' ', 'Backspace', 'Delete', 'o'].includes(e.key)) {
+        if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'e', 'Enter', ' ', 'Backspace', 'Delete', 'o'].includes(e.key)) {
           e.preventDefault();
         }
 
@@ -236,6 +236,7 @@
             break;
           }
           case 'e':
+          case 'Enter':
             if (ptr.currentIndex === 4) break;
             document.getElementById('editor').focus();
             break;
