@@ -171,6 +171,7 @@
         container.appendChild(div);
       });
       document.getElementById('editor').value = mandal.masses[ptr.currentIndex];
+      document.getElementById('editor').readOnly = (ptr.currentIndex === 4);
     }
 
     function startAutoSave() {
@@ -179,6 +180,7 @@
 
     async function saveEditor() {
       const ptr = await getPointer();
+      if (ptr.currentIndex === 4) return;
       const mandal = await getMandal(ptr.currentMandalId);
       const textarea = document.getElementById('editor');
       if (mandal.masses[ptr.currentIndex] !== textarea.value) {
@@ -234,6 +236,7 @@
             break;
           }
           case 'e':
+            if (ptr.currentIndex === 4) break;
             document.getElementById('editor').focus();
             break;
           case ' ':
