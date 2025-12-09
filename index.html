@@ -167,10 +167,10 @@
         div.classList.add('cell');
         if (idx === ptr.currentIndex) div.classList.add('selected');
         if (idx === 4) div.classList.add('core');
-        div.textContent = text;
+        div.textContent = (idx === 4 ? mandal.coreContent : text);
         container.appendChild(div);
       });
-      document.getElementById('editor').value = mandal.masses[ptr.currentIndex];
+      document.getElementById('editor').value = (ptr.currentIndex === 4 ? mandal.coreContent : mandal.masses[ptr.currentIndex]);
       document.getElementById('editor').readOnly = (ptr.currentIndex === 4);
     }
 
@@ -244,7 +244,11 @@
             const content = mandal.masses[ptr.currentIndex];
             if (!content || ptr.currentIndex === 4) return;
             if (mandal.links && mandal.links[ptr.currentIndex]) {
-              ptr.currentMandalId = mandal.links[ptr.currentIndex];
+              const destId = mandal.links[ptr.currentIndex];
+              const destMandal = await getMandal(destId);
+              destMandal.coreContent = content;
+              await updateMandal(destMandal);
+              ptr.currentMandalId = destId;
             } else {
               const newId = await addMandal({
                 coreContent: content,
